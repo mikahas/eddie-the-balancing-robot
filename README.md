@@ -1,7 +1,7 @@
 # Eddie the Balancing Robot
 Eddie is a relatively small robot that balances itself on two wheels. It is controlled by an Arduino board using an accelerometer & gyroscope sensor.
 
-## depencencies
+## Depencencies
 
 - PID library (http://playground.arduino.cc/Code/PIDLibrary)
 - MPU6050 library for Arduino (https://github.com/jrowberg/i2cdevlib/tree/master/Arduino/MPU6050)
