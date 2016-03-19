@@ -40,7 +40,8 @@ void SerialLog::msg(String type, String message) {
 	if (_serialAvailable) {
 		Serial.print("[");
 		Serial.print(type);
-		Serial.print("]: ");
+		Serial.print("]:\t");
+		if (type == "LOG") Serial.print("\t");
 		Serial.print(message);
 		Serial.print("\n");
 	}
