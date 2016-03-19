@@ -9,6 +9,7 @@
 // defines
 
 #define DEBUG_INTERVAL 1000
+#define MIN_SPEED 40
 
 #define MIN_MOTOR_SPEED 40
 
@@ -17,16 +18,16 @@
 //#define RIGHT_ENCODER_PIN_A 2
 //#define RIGHT_ENCODER_PIN_B 4
 
-#define RIGHT_MOTOR_PIN_A 8
-#define RIGHT_MOTOR_PIN_B 7
+#define RIGHT_MOTOR_PIN_A 7
+#define RIGHT_MOTOR_PIN_B 8
 #define RIGHT_MOTOR_PIN_PWM 9
 
 #define LEFT_ENCODER_INT 1
 #define LEFT_ENCODER_PIN_A 3
-#define LEFT_ENCODER_PIN_B 12
+#define LEFT_ENCODER_PIN_B 5
 
 #define LEFT_MOTOR_PIN_A 11
-#define LEFT_MOTOR_PIN_B 13
+#define LEFT_MOTOR_PIN_B 12
 #define LEFT_MOTOR_PIN_PWM 10
 
 // variables
@@ -118,20 +119,31 @@ void setup() {
 void loop() {
 	unsigned long currentTime = millis();
 
-	// if programming failed, don't try to do anything
-  if (!dmpReady) return;
-
   // sensor mpu interrupt happened, handle data
-  if (mpuInterrupt) {
+  if (mpuInterrupt && dmpReady) {
   	handleSensorMPUData();
+  }
+
+	// calculate PID with sensor input and update output for motors
+  if (dmpReady) {
+  	pid.Compute();
+  	// TODO: stop motors if angle is too steep to recover
+    motors.drive(output, output, MIN_SPEED);
   }
 
   // debug values here
   if ((unsigned long)(currentTime - debugTimer) >= DEBUG_INTERVAL) {
 
-  	// output from sensor
-    //logger.log(ypr[0] * 180/M_PI + tab + ypr[1] * 180/M_PI + tab + ypr[2] * 180/M_PI);
-    logger.log((String)input);
+    if (dmpReady) {
+    	// output from sensor
+	    //logger.log(ypr[0] * 180/M_PI + tab + ypr[1] * 180/M_PI + tab + ypr[2] * 180/M_PI);
+	    logger.log((String)input + tab + output);	// sensor output is PID input
+
+	  // sensor programming failed
+    }else{
+    	logger.error("DMP is not ready, please restart!");
+    	// TODO: Flash led?
+    }
 
   	// save debugging time
 		debugTimer = currentTime;
