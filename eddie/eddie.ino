@@ -18,17 +18,22 @@
 //#define RIGHT_ENCODER_PIN_A 2
 //#define RIGHT_ENCODER_PIN_B 4
 
-#define RIGHT_MOTOR_PIN_A 7
-#define RIGHT_MOTOR_PIN_B 8
-#define RIGHT_MOTOR_PIN_PWM 9
+#define RIGHT_MOTOR_PIN_A 13
+#define RIGHT_MOTOR_PIN_B 12
+#define RIGHT_MOTOR_PIN_PWM 11
 
 #define LEFT_ENCODER_INT 1
 #define LEFT_ENCODER_PIN_A 3
 #define LEFT_ENCODER_PIN_B 5
 
-#define LEFT_MOTOR_PIN_A 11
-#define LEFT_MOTOR_PIN_B 12
+#define LEFT_MOTOR_PIN_A 8
+#define LEFT_MOTOR_PIN_B 9
 #define LEFT_MOTOR_PIN_PWM 10
+
+// PID adjustment inputs
+#define ADJ_PIN_P A0
+#define ADJ_PIN_I A1
+#define ADJ_PIN_D A2
 
 // variables
 volatile bool mpuInterrupt = false;	// indicates whether MPU interrupt pin has gone high
@@ -47,12 +52,18 @@ float ypr[3];           // [yaw, pitch, roll]   yaw/pitch/roll container and gra
 MPU6050 sensor;
 
 double defaultSetPoint = 0.0;
+double criticalAngle = 15.0; // stop motors if absolute angle is greater than critical angle
 double setpoint = defaultSetPoint;
 double input, output;
 
 PID pid(&input, &output, &setpoint, 70, 240, 1.9, DIRECT);
+double kp , ki, kd;
+double prevKp, prevKi, prevKd;
 
 MotorDrive motors(LEFT_MOTOR_PIN_PWM, LEFT_MOTOR_PIN_A, LEFT_MOTOR_PIN_B, RIGHT_MOTOR_PIN_PWM, RIGHT_MOTOR_PIN_A, RIGHT_MOTOR_PIN_B);
+int motorStatus = 0;
+
+String motorStatusList[2] = { "running", "stopped"};
 
 SerialLog logger;
 String tab = "\t";
@@ -100,16 +111,16 @@ void setup() {
 		mpuIntStatus = sensor.getIntStatus();
 
 		// set our DMP Ready flag so the main loop() function knows it's okay to use it
-    logger.msg("SETUP", "DMP is ready, wait for first interrupt...");
-    dmpReady = true;
+		logger.msg("SETUP", "DMP is ready, wait for first interrupt...");
+		dmpReady = true;
 
-    // get expected DMP packet size for later comparison
-    packetSize = sensor.dmpGetFIFOPacketSize();
+		// get expected DMP packet size for later comparison
+		packetSize = sensor.dmpGetFIFOPacketSize();
 
-    logger.msg("SETUP", "Set PID configuration values");
-    pid.SetMode(AUTOMATIC);
-    pid.SetSampleTime(10);
-    pid.SetOutputLimits(-255, 255);
+		logger.msg("SETUP", "Set PID configuration values");
+		pid.SetMode(AUTOMATIC);
+		pid.SetSampleTime(10);
+		pid.SetOutputLimits(-255, 255);
 	}else{
 		String errorMsg = "DMP initialization failed with code: ";
 		logger.error(errorMsg + dmpStatus);
@@ -119,71 +130,77 @@ void setup() {
 void loop() {
 	unsigned long currentTime = millis();
 
-  // sensor mpu interrupt happened, handle data
-  if (mpuInterrupt && dmpReady) {
-  	handleSensorMPUData();
-  }
+	// sensor mpu interrupt happened, handle data
+	if (mpuInterrupt && dmpReady) {
+		handleSensorMPUData();
+	}
 
 	// calculate PID with sensor input and update output for motors
-  if (dmpReady) {
-  	pid.Compute();
-  	// TODO: stop motors if angle is too steep to recover
-    motors.drive(output, output, MIN_SPEED);
-  }
+	if (dmpReady) {
+		pid.Compute();
+		// stop motors if angle is too steep to recover
+		if (abs(input) > criticalAngle) {
+			motorStatus = 1;
+			motors.stop();
+		}else{
+			motorStatus = 0;
+			motors.drive(output, output, MIN_SPEED);
+		}
 
-  // debug values here
-  if ((unsigned long)(currentTime - debugTimer) >= DEBUG_INTERVAL) {
+	}
 
-    if (dmpReady) {
-    	// output from sensor
-	    //logger.log(ypr[0] * 180/M_PI + tab + ypr[1] * 180/M_PI + tab + ypr[2] * 180/M_PI);
-	    logger.log((String)input + tab + output);	// sensor output is PID input
+	// debug values here
+	if ((unsigned long)(currentTime - debugTimer) >= DEBUG_INTERVAL) {
 
-	  // sensor programming failed
-    }else{
-    	logger.error("DMP is not ready, please restart!");
-    	// TODO: Flash led?
-    }
+		if (dmpReady) {
+			// output from sensor
+			logger.log((String)input + tab + output + tab + motorStatusList[motorStatus]);	// sensor output is PID input
 
-  	// save debugging time
+		// sensor programming failed
+		}else{
+			logger.error("DMP is not ready, please restart!");
+			// TODO: Flash led?
+		}
+
+		// save debugging time
 		debugTimer = currentTime;
-  }
+	}
 }
 
 void handleSensorMPUData () {
 
 	// reset interrupt flag and get INT_STATUS byte
-  mpuInterrupt = false;
-  mpuIntStatus = sensor.getIntStatus();
+	mpuInterrupt = false;
+	mpuIntStatus = sensor.getIntStatus();
 
-  // get current FIFO count
-  fifoCount = sensor.getFIFOCount();
+	// get current FIFO count
+	fifoCount = sensor.getFIFOCount();
 
-  // check for overflow
-  if ((mpuIntStatus & 0x10) || fifoCount == 1024) {
-    // reset so we can continue cleanly
-    sensor.resetFIFO();
-    logger.warning("FIFO overflow!");
+	// check for overflow
+	if ((mpuIntStatus & 0x10) || fifoCount == 1024) {
+		// reset so we can continue cleanly
+		sensor.resetFIFO();
+		logger.warning("FIFO overflow!");
 
-  // otherwise, check for DMP data ready interrupt (this should happen frequently)
-  } else if (mpuIntStatus & 0x02) {
+	// otherwise, check for DMP data ready interrupt (this should happen frequently)
+	} else if (mpuIntStatus & 0x02) {
 
-    // wait for correct available data length, should be a VERY short wait
-    while (fifoCount < packetSize) fifoCount = sensor.getFIFOCount();
+		// wait for correct available data length, should be a VERY short wait
+		while (fifoCount < packetSize) fifoCount = sensor.getFIFOCount();
 
-    // read a packet from FIFO
-    sensor.getFIFOBytes(fifoBuffer, packetSize);
+		// read a packet from FIFO
+		sensor.getFIFOBytes(fifoBuffer, packetSize);
 
-    // track FIFO count here in case there is > 1 packet available
-    // (this lets us immediately read more without waiting for an interrupt)
-    fifoCount -= packetSize;
+		// track FIFO count here in case there is > 1 packet available
+		// (this lets us immediately read more without waiting for an interrupt)
+		fifoCount -= packetSize;
 
-    sensor.dmpGetQuaternion(&q, fifoBuffer);
-    sensor.dmpGetGravity(&gravity, &q);
-    sensor.dmpGetYawPitchRoll(ypr, &q, &gravity);
+		sensor.dmpGetQuaternion(&q, fifoBuffer);
+		sensor.dmpGetGravity(&gravity, &q);
+		sensor.dmpGetYawPitchRoll(ypr, &q, &gravity);
 
-    // update input for PID
-    input = ypr[1] * 180/M_PI;
+		// update input for PID
+		input = ypr[1] * 180/M_PI;
  }
 }
 
@@ -193,3 +210,16 @@ void handleSensorMPUData () {
 void dmpDataReady() {
 	mpuInterrupt = true;
 }
+
+void adjustPIDValues () {
+
+	int potKp = analogRead(ADJ_PIN_P);
+	int potKi = analogRead(ADJ_PIN_I);
+	int potKd = analogRead(ADJ_PIN_D);
+
+	kp = map(potKp, 0, 1023, 0, 25000) / 100.0; //0 - 250
+	ki = map(potKi, 0, 1023, 0, 100000) / 100.0; //0 - 1000
+	kd = map(potKd, 0, 1023, 0, 500) / 100.0; //0 - 5
+
+}
+
