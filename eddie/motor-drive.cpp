@@ -58,9 +58,8 @@ void MotorDrive::drive(int leftSpeed, int rightSpeed, int minAbsSpeed) {
 	digitalWrite(_leftMotorA, leftSpeed > 0 ? HIGH : LOW);
 	digitalWrite(_leftMotorB, leftSpeed > 0 ? LOW : HIGH);
 
-	// right motor is the mirror of left so switch between A and B
-	digitalWrite(_rightMotorB, rightSpeed > 0 ? HIGH : LOW);
-	digitalWrite(_rightMotorA, rightSpeed > 0 ? LOW : HIGH);
+	digitalWrite(_rightMotorA, rightSpeed > 0 ? HIGH : LOW);
+	digitalWrite(_rightMotorB, rightSpeed > 0 ? LOW : HIGH);
 
 	// let's do this!
 	analogWrite(_leftMotorPwm, realLeftSpeed * _leftMotorTrim);
